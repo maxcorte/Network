@@ -16,7 +16,7 @@ def encode(type, window, seqnum, timestamp, payload):
     word = (type_bits << 30) | (window << 24) | (length << 11) | seqnum
 
     header.append(struct.pack('!I', word))
-    header.append(struct.pack('I', timestamp))
+    header.append(struct.pack('!I', timestamp))
 
     header_bytes = b''.join(header)
     crc1 = struct.pack('!I', zlib.crc32(header_bytes) & 0xffffffff)
