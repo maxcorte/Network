@@ -3,68 +3,75 @@ import zlib
 import socket
 import sys
 import getopt
+import time
 
+PTYPE_DATA = 1
+PTYPE_ACK = 2
+PTYPE_SACK = 3
 
-
+MAX_WINDOW = 63
+MAX_SEQNUM = 2047
+MAX_LENGTH = 1024
 
 def create_server(server_addr: str, port: int):
     try:
         sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
         sock.bind((server_addr, port))
-        print(f"Serveur UDP IPv6 écoute sur {server_addr}:{port} ...")
+        print(f"Serveur UDP IPv6 écoute sur {server_addr}:{port} ...", file=sys.stderr)
+
+        raw_path, client_addr = sock.recvfrom(2048)
+        path = raw_path.decode().strip()
+        print(f"Client connecté depuis {client_addr}, path='{path}'", file=sys.stderr)
+
+        payload = b"Hello, client from SRTP server!"
+        timestamp = int(time.time() * 1000) & 0xffffffff  # Masque 32-bit
+        segment = encode("PTYPE_DATA", 0, 0, timestamp, payload)
+        sock.sendto(segment, client_addr)
+        print(f"Segment DATA envoyé ({len(payload)} bytes)", file=sys.stderr)
+
     except socket.error as err:
-        print(f'There is an error: ', err)
+        print(f'Erreur socket: {err}', file=sys.stderr)
+        return -1
+    except Exception as e:
+        print(f'Erreur inattendue: {e}', file=sys.stderr)
         return -1
     return 0
 
-
-def encode(type, window, seqnum, timestamp, payload):
-    header = []
-    message = []
-    match type:
+def encode(type_str, window, seqnum, timestamp, payload):
+    match type_str:
         case "PTYPE_DATA": type_bits = 1
         case "PTYPE_ACK": type_bits = 2
         case "PTYPE_SACK": type_bits = 3
         case _: type_bits = 0
 
     length = len(payload)
+    # MASQUE 32-bit pour éviter overflow struct 'I'
+    word = ((type_bits << 30) | (window << 24) | (length << 11) | seqnum) & 0xffffffff
 
-    word = (type_bits << 30) | (window << 24) | (length << 11) | seqnum
+    # Header 8 bytes
+    header_bytes = struct.pack('!II', word, timestamp & 0xffffffff)
+    
+    # CRC1 sur header 8 bytes
+    crc1_calc = zlib.crc32(header_bytes) & 0xffffffff
+    crc1 = struct.pack('>I', crc1_calc)
 
-    header.append(struct.pack('!I', word))
-    header.append(struct.pack('!I', timestamp))
-
-    header_bytes = b''.join(header)
-    crc1 = struct.pack('!I', zlib.crc32(header_bytes) & 0xffffffff)
-
-    message.append(header_bytes)
-    message.append(crc1)
-    message.append(payload)
+    message = [header_bytes, crc1]
     if payload:
-        crc2 = struct.pack('!I', zlib.crc32(payload) & 0xffffffff)
+        message.append(payload)
+        crc2_calc = zlib.crc32(payload) & 0xffffffff
+        crc2 = struct.pack('>I', crc2_calc)
         message.append(crc2)
-    full_message = b''.join(message)
-    return full_message
+    
+    return b''.join(message)
 
 if __name__ == "__main__":
-    #print(encode("PTYPE_DATA", 5, 10, 1234567890, b"Hello"))
-    if len(sys.argv)>1:
-        print("Enough arguments were given.")
-        args = sys.argv[1:]
-        options = "r:"
-        long_options = ["root="]
-        try:
-            arguments, values= getopt.getopt(args=args, shortopts=options, longopts=long_options)
-            for currentArg, currentVal in arguments:
-                if currentArg in ('-r', '--root'):
-                    print(f"Opening the file from the directory {currentVal}.") 
-            create_server(server_addr = str(values[0]), port = int(values[1]))
+    if len(sys.argv) != 3:
+        print("Usage: python3 server.py hostname port", file=sys.stderr)
+        sys.exit(1)
 
-        except getopt.error as err:
-            print("There is an error: ",str(err))
-    else: 
-        print("No arguments given")
+    server_addr = sys.argv[1]
+    port = int(sys.argv[2])
 
-
-
-
+    result = create_server(server_addr, port)
+    if result != 0:
+        sys.exit(1)
