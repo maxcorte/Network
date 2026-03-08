@@ -2,7 +2,7 @@ import struct
 import zlib
 import socket
 import sys
-import getopt
+import argparse
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -14,6 +14,8 @@ MAX_WINDOW = 63
 MAX_SEQNUM = 2047
 MAX_LENGTH = 1024
 HEADER_LEN = 12
+
+DEFAULT_LOCATION = "./llm.model"
 
 class DecodeError(Exception):
     pass
@@ -110,32 +112,30 @@ def connect_client(server_name: str):
         return None, None
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 client.py http://hostname:port/path/to/file [--save location]", file=sys.stderr)
-        sys.exit(1)
-        
-    servername = sys.argv[1]
-    args = sys.argv[2:]
-    options = "s:"
-    long_options = ["save="]
-    try:
-        arguments, values = getopt.getopt(args=args, shortopts=options, longopts=long_options)
-    except getopt.error as err:
-        print(f"Erreur args: {err}", file=sys.stderr)
-        sys.exit(1)
-        
-    save_path = "llm.model"
-    for currentArg, currentVal in arguments:
-        if currentArg in ('-s', '--save'):
-            save_path = currentVal
     
-    sock, path = connect_client(servername)
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--save", 's',
+        default=DEFAULT_LOCATION,
+        help=f"Location corresponds to the path and name of the file where to store the data received (default : {DEFAULT_LOCATION})"
+    )
+
+    parser.add_argument(
+        'servername',
+        help= "Servername has the form http://hostname:port/path /to/file, where hostname and port have the same meaning as for the server, and path/to/file is the relative path of the file to be retrieved"
+    )
+
+    args = parser.parse_args()
+    
+    save_path = args.save
+    sock, path = connect_client(args.servername)
     if sock is None:
         sys.exit(1)
     
     try:
         # Envoyer le path au serveur
-        sock.send(path.encode())
+        sock.send(f"GET {path}\r\n".encode('ascii'))
         
         # Recevoir 1 seul segment DATA
         raw = sock.recv(2048)

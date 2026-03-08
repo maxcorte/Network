@@ -4,6 +4,8 @@ import socket
 import sys
 import getopt
 import time
+import os
+import argparse
 
 PTYPE_DATA = 1
 PTYPE_ACK = 2
@@ -13,17 +15,33 @@ MAX_WINDOW = 63
 MAX_SEQNUM = 2047
 MAX_LENGTH = 1024
 
-def create_server(server_addr: str, port: int):
+DEFAULT_DIRECTORY = '.'
+
+def create_server(server_addr: str, port: int, directory: str):
     try:
         sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
         sock.bind((server_addr, port))
         print(f"Serveur UDP IPv6 écoute sur {server_addr}:{port} ...", file=sys.stderr)
 
-        raw_path, client_addr = sock.recvfrom(2048)
-        path = raw_path.decode().strip()
-        print(f"Client connecté depuis {client_addr}, path='{path}'", file=sys.stderr)
+        raw_request, client_addr = sock.recvfrom(2048)
+        request_str = raw_request.decode('ascii').strip()   
 
-        payload = b"Hello, client from SRTP server!"
+        #Si c'est le bon format on recoit la requete sous le format: 
+        # "GET /llmsmall\r\n" de la part du client.
+
+        if request_str.startswith('GET '):  #si ca commence bien par "GET " alors c'est bien une requete HTTP 0.9
+            path = request_str[4:].rstrip('\r\n')
+            file_path = os.path.join(directory, path.lstrip("/"))
+            try:
+                with open(file_path, 'rb') as f: #read binary
+                    payload = f.read()
+            except FileNotFoundError:
+                print("File not found")
+                payload = b""
+        else:
+            print("Request is not in the valid format.")
+            return
+
         timestamp = int(time.time() * 1000) & 0xffffffff  # Masque 32-bit
         segment = encode("PTYPE_DATA", 0, 0, timestamp, payload)
         sock.sendto(segment, client_addr)
@@ -65,13 +83,28 @@ def encode(type_str, window, seqnum, timestamp, payload):
     return b''.join(message)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python3 server.py hostname port", file=sys.stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser()
 
-    server_addr = sys.argv[1]
-    port = int(sys.argv[2])
+    parser.add_argument(
+        "--root", 'r',
+        default=DEFAULT_DIRECTORY,
+        help=f"Directory is the root folder from which the server retrieves the file requested by the client (default : {DEFAULT_DIRECTORY})"
+    )
 
-    result = create_server(server_addr, port)
+    parser.add_argument(
+        'hostname',
+        help= "Hostname being the name of the domain or IPv6 address on which the server listens to incoming client requests"
+    )
+
+    parser.add_argument(
+        'port',
+        type=int,
+        help="Port being the UDP port number to which the server attaches"
+    )
+
+    args = parser.parse_args()
+    
+    result = create_server(args.hostname, args.port, args.root)
+    
     if result != 0:
         sys.exit(1)
