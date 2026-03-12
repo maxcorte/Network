@@ -32,6 +32,43 @@ class Segment:
 def crc32(data: bytes) -> int:
     return zlib.crc32(data) & 0xffffffff
 
+def encode_sack(next_seqnum: int, timestamp: int, out_of_order: List[int]) -> bytes:
+    #construire la chaine binaire de 11 bits
+    bit_string = ""
+    for seq in out_of_order:
+        seq_limite = seq & 0x7FF 
+        
+        #transforme nombre en texte binaire de 11 bits ex : 5 devient "00000000101"
+        seq_binaire = format(seq_limite, '011b') 
+        bit_string += seq_binaire
+        
+    #padding, doit etre un multiple de 32 bits
+    reste = len(bit_string) % 32
+    if reste != 0:
+        bits_manquants = 32 - reste
+        #padding avec 0
+        bit_string += "0" * bits_manquants
+        
+    #convertir texte en octets
+    payload_length_bytes = len(bit_string) // 8
+    #int(bit_string, 2) lit le texte comme du binaire et to_bytes le transforme en octets
+    payload = int(bit_string, 2).to_bytes(payload_length_bytes, byteorder='big')
+    
+    #header 
+    ptype = PTYPE_SACK
+    window = MAX_WINDOW
+    
+    #decalle chaque valeur à sa place
+    word = ((ptype << 30) | (window << 24) | (payload_length_bytes << 11) | next_seqnum) & 0xffffffff
+    header_bytes = struct.pack('!II', word, timestamp & 0xffffffff)
+    
+    crc1_calc = crc32(header_bytes)
+    crc1 = struct.pack('!I', crc1_calc)
+    crc2_calc = crc32(payload)
+    crc2 = struct.pack('!I', crc2_calc)
+    
+    return header_bytes + crc1 + payload + crc2
+
 def decode_segment(raw: bytes) -> Segment: 
     if len(raw) < HEADER_LEN:
         raise DecodeError("Segment too short")
@@ -149,38 +186,67 @@ if __name__ == "__main__":
     
     try:
         # Envoyer le path au serveur
-        sock.send(f"GET {path}\r\n".encode('ascii'))
+        request_data = f"GET {path}\r\n".encode('ascii')
+        sock.send(request_data)
         sock.settimeout(2.0)
         recieved = {}
         expected_seqnum = 0
         eof_seqnum = None
-        try:
-            sock.settimeout(10.0)
-            while True:
-                try :
-                    raw = sock.recv(2048)
-                    print(f"Reçu {len(raw)} bytes", file=sys.stderr)  # Debug
-                    segment = decode_segment(raw)
-                    print(f"Seq {segment.seqnum} len {segment.length}", file=sys.stderr)  # Debug
-                    recieved[segment.seqnum] = segment
+        client_timeouts = 0
+        max_client_timeouts = 10
+        sock.settimeout(10.0)
+        while True:
+            try :
+                client_timeouts = 0
+                raw = sock.recv(2048)
+                print(f"Reçu {len(raw)} bytes", file=sys.stderr)  # Debug
+                segment = decode_segment(raw)
+                print(f"Seq {segment.seqnum} len {segment.length}", file=sys.stderr)  # Debug
+                recieved[segment.seqnum] = segment
 
-                    if not segment.payload:
-                        eof_seqnum = segment.seqnum
+                if not segment.payload:
+                    eof_seqnum = segment.seqnum
 
-                    while expected_seqnum in recieved:
-                        expected_seqnum = (expected_seqnum + 1) % 2048
-                    
-                    #envoi d'ack avec le prochain num attendu
+                while expected_seqnum in recieved:
+                    expected_seqnum = (expected_seqnum + 1) % 2048
+                
+                out_of_order = []
+                for seq in recieved.keys():
+                    diff = (seq - expected_seqnum) % 2048
+                    if 0 < diff < MAX_WINDOW: 
+                        out_of_order.append(seq)
+                
+                #capaciter de 744 du payload  !!!
+                out_of_order = out_of_order[:744]
+
+                #SACK si paquet hors ordre sinon ACK
+                if out_of_order:
+                    ack_packet = encode_sack(expected_seqnum, segment.timestamp, out_of_order)
+                    sock.send(ack_packet)
+                    print(f"SACK envoyé (attend {expected_seqnum}), hors-ordre: {out_of_order}", file=sys.stderr)
+                else:
                     ack_packet = encode_ack(expected_seqnum, segment.timestamp)
                     sock.send(ack_packet)
                     print(f"ACK envoyé, attend le seq {expected_seqnum}", file=sys.stderr)
 
-                    if eof_seqnum is not None and expected_seqnum == (eof_seqnum + 1) % 2048:
-                        break
-                except DecodeError as e:
-                    print(f"Erreur décodage: {e} (paquet: {len(raw)}B)", file=sys.stderr) 
-        except socket.timeout:
-            print("Timeout", file=sys.stderr)
+                if eof_seqnum is not None and expected_seqnum == (eof_seqnum + 1) % 2048:
+                    break
+            except DecodeError as e:
+                print(f"Erreur décodage: {e} (paquet: {len(raw)}B)", file=sys.stderr) 
+            except socket.timeout:
+                client_timeouts += 1
+                if client_timeouts > max_client_timeouts:
+                    print("Le serveur ne répond plus. On abandonne le téléchargement.", file=sys.stderr)
+                    break 
+                    
+                if len(recieved) == 0:
+                    #si jms rien reçu
+                    print(f"Timeout (aucun paquet reçu). Renvoi du GET... ({client_timeouts}/{max_client_timeouts})", file=sys.stderr)
+                    sock.send(request_data)
+                else:
+                    #c'est que le reseau traine donc on attend
+                    print(f"Timeout d'attente. On patiente que le serveur retransmette... ({client_timeouts}/{max_client_timeouts})", file=sys.stderr)
+
             
         sorted_recieved = sorted(recieved.items())
         total_length = 0

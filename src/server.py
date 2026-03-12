@@ -21,11 +21,43 @@ DEFAULT_DIRECTORY = '.'
 #pour lire les ack
 def decode_ack(raw: bytes):
     if len(raw) < 12:
-        return None, None
+        return None, None, b""
+        
     word = int.from_bytes(raw[0:4], byteorder='big')
     ptype = (word >> 30) & 0x3
+    length = (word >> 11) & 0x1fff
     seqnum = word & 0x7ff
-    return ptype, seqnum
+    
+    payload = b""
+    #si sack => on extrait le payload
+    if ptype == PTYPE_SACK and length > 0:
+        if len(raw) >= 12 + length:
+            payload = raw[12:12+length]
+            
+    return ptype, seqnum, payload
+
+#payload binaire en liste de num 
+def decode_sack_payload(payload: bytes):
+    if not payload:
+        return []
+    bit_string = ""
+    for byte in payload:
+        #format(byte, '08b') transforme un octet en texte de 8carct
+        octet_binaire = format(byte, '08b')
+        bit_string += octet_binaire
+        
+    out_of_order = []
+    #decoupe la chaine en 11 bits et convertit chaque morceau en nb entier
+    for i in range(0, len(bit_string) - 10, 11):        
+        chunk = bit_string[i : i + 11]
+        #comment savoir si padding ou si paquet 0 ? regarder si un 1 est present dans le reste de la chaine
+        reste_de_la_chaine = bit_string[i:]
+        if chunk == "00000000000" and "1" not in reste_de_la_chaine:
+            break
+        seq = int(chunk, 2)
+        out_of_order.append(seq)
+
+    return out_of_order
 
 def create_server(server_addr: str, port: int, directory: str):
     try:
@@ -62,18 +94,21 @@ def create_server(server_addr: str, port: int, directory: str):
                 seq_payloads = [payload]
             # dernier seg vide ajouté pour qu'il soit géré par la window coulissante
             seq_payloads.append(b"")
-
             total_chunks = len(seq_payloads)
             base = 0
             next_to_send = 0
             window_size = 10 
             max_retries = 10
             retries = 0
+            acked_indices = set() #memoire des morceaux deja valides
             sock.settimeout(0.5) #attendre les acks
 
             while base < total_chunks:
                 # envoi de paquets (dans la limite de la fenetre)
                 while next_to_send < base + window_size and next_to_send < total_chunks:
+                    if next_to_send in acked_indices:
+                        next_to_send += 1
+                        continue
                     elements = seq_payloads[next_to_send]
                     current_seqnum = next_to_send % 2048
                     
@@ -90,16 +125,28 @@ def create_server(server_addr: str, port: int, directory: str):
                 #écoute des ack
                 try:
                     raw_ack, _ = sock.recvfrom(2048)
-                    ptype, ack_seqnum = decode_ack(raw_ack)
-                    if ptype == PTYPE_ACK:
+                    ptype, ack_seqnum, payload = decode_ack(raw_ack)
+                    if ptype == PTYPE_ACK or ptype == PTYPE_SACK:
                         retries = 0
-                        print(f"ACK reçu -> le client attend le seq {ack_seqnum}", file=sys.stderr)
                         #avance la base
                         expected_base_seq = base % 2048
-                        if ack_seqnum > expected_base_seq:
-                            base += (ack_seqnum - expected_base_seq)
-                        elif ack_seqnum < expected_base_seq:
-                            base += (2048 - expected_base_seq) + ack_seqnum
+                        diff = (ack_seqnum - expected_base_seq) % 2048
+                        
+                        #si l'ecart est dans notre fenetre on le garde sinon c'est un ancien truc qui arrive en retard
+                        if 0 < diff <= window_size:
+                            base += diff
+                        
+                        if ptype == PTYPE_SACK and payload:
+                            sack_seqnums = decode_sack_payload(payload)
+                            print(f"SACK reçu (base: {ack_seqnum}) -> Paquets futurs validés : {sack_seqnums}", file=sys.stderr)
+                            
+                            for sq in sack_seqnums:
+                                for i in range(base, min(base + window_size, total_chunks)):
+                                    if (i % 2048) == sq:
+                                        acked_indices.add(i)  #ne pas renvoyer
+                                        break
+                        else:
+                            print(f"ACK reçu -> le client attend le seq {ack_seqnum}", file=sys.stderr)
                             
                 except socket.timeout:
                     retries += 1
@@ -108,7 +155,7 @@ def create_server(server_addr: str, port: int, directory: str):
                         print(f"Trop de timeouts consécutifs ({max_retries})", file=sys.stderr)
                         break
                     #si on recoit rien apres 0.5s, on recule et on renvoie
-                    print("Timeout ! Aucun ACK reçu. On renvoie la fenetre.", file=sys.stderr)
+                    print("Timeout ! On renvoie uniquement les paquets de la fenêtre NON acquittés.", file=sys.stderr)
                     next_to_send = base
             
             
