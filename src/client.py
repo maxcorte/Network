@@ -197,8 +197,8 @@ if __name__ == "__main__":
         sock.settimeout(10.0)
         while True:
             try :
-                client_timeouts = 0
                 raw = sock.recv(2048)
+                client_timeouts = 0
                 print(f"Reçu {len(raw)} bytes", file=sys.stderr)  # Debug
                 segment = decode_segment(raw)
                 print(f"Seq {segment.seqnum} len {segment.length}", file=sys.stderr)  # Debug
