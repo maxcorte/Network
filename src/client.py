@@ -193,8 +193,8 @@ if __name__ == "__main__":
         expected_seqnum = 0
         eof_seqnum = None
         client_timeouts = 0
-        max_client_timeouts = 10
-        sock.settimeout(10.0)
+        max_client_timeouts = 50
+        sock.settimeout(5.0)
         while True:
             try :
                 raw = sock.recv(2048)

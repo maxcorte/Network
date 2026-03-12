@@ -22,6 +22,14 @@ DEFAULT_DIRECTORY = '.'
 def decode_ack(raw: bytes):
     if len(raw) < 12:
         return None, None, b""
+    
+    header_bytes = raw[0:8]
+    crc1_recv = int.from_bytes(raw[8:12], byteorder='big')
+    crc1_calc = zlib.crc32(header_bytes) & 0xffffffff
+    
+    if crc1_recv != crc1_calc:
+        #crc mauvais don on ignore le ack
+        return None, None, b""
         
     word = int.from_bytes(raw[0:4], byteorder='big')
     ptype = (word >> 30) & 0x3
@@ -67,7 +75,11 @@ def create_server(server_addr: str, port: int, directory: str):
 
         while True:
             raw_request, client_addr = sock.recvfrom(2048)
-            request_str = raw_request.decode('ascii').strip()   
+            try:
+                request_str = raw_request.decode('ascii').strip()
+            except UnicodeDecodeError:
+                #si corrompu on l'ignore
+                continue   
 
             # Si c'est le bon format on recoit la requete sous le format: 
             # "GET /llmsmall\r\n" de la part du client.
@@ -98,7 +110,7 @@ def create_server(server_addr: str, port: int, directory: str):
             base = 0
             next_to_send = 0
             window_size = 10 
-            max_retries = 10
+            max_retries = 50
             retries = 0
             acked_indices = set() #memoire des morceaux deja valides
             sock.settimeout(0.5) #attendre les acks

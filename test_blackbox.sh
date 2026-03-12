@@ -1,0 +1,52 @@
+#!/bin/bash
+
+
+
+# Fichiers de test
+ORIGINAL="www/test_blackbox.bin"
+DOWNLOADED="reçu_blackbox.bin"
+
+# Génération d'un fichier de 50 Ko pour les tests
+head -c 50000 /dev/urandom > $ORIGINAL
+
+# Fonction de test générique
+run_test() {
+    TEST_NAME=$1
+    SIM_ARGS=$2
+    echo -e "========== Test: ${TEST_NAME} =========="
+    #serveur
+    python3 src/server.py localhost 8080 --root ./www > /dev/null 2>&1 &
+    SERVER_PID=$!
+    
+    #link simulator
+    ../../Linksimulator/Linksimulator-master/link_sim -p 8888 -P 8080 $SIM_ARGS > /dev/null 2>&1 &
+    SIM_PID=$!
+    
+    sleep 1 
+    
+    #client
+    python3 src/client.py "http://localhost:8888/test_blackbox.bin" -s $DOWNLOADED
+    
+    # 4. Vérification Black-Box (Comparaison binaire)
+    if cmp -s "$ORIGINAL" "$DOWNLOADED"; then
+        echo -e "${GREEN}[SUCCÈS] Le fichier reçu est parfaitement identique !${NC}"
+    else
+        echo -e "${RED}[ÉCHEC] Le fichier reçu est corrompu ou incomplet.${NC}"
+    fi
+    
+    # 5. Nettoyage : on tue les processus en arrière-plan et on supprime le fichier téléchargé
+    kill -9 $SERVER_PID $SIM_PID 2>/dev/null
+    rm -f $DOWNLOADED
+    sleep 1
+    echo ""
+}
+
+run_test "Réseau Parfait" "-l 0"
+run_test "Pertes extrêmes (60% Data + ACKs)" "-l 60 -R"
+run_test "Latence et Jitter (Délai 50ms, Jitter 50ms)" "-d 50 -j 50 -R"
+run_test "Corruption de paquets (10%)" "-e 10 -R"
+run_test "Troncation de paquets (10%)" "-c 10 -R"
+run_test "Tout en même temps" "-l 20 -d 30 -j 20 -e 5 -c 5 -R"
+
+rm -f $ORIGINAL
+echo "Tests terminés !"
