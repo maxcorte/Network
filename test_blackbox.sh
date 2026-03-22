@@ -39,8 +39,8 @@ run_test() {
 
 run_test "Réseau Parfait" "-l 0"
 run_test "Pertes extrêmes (60% Data + ACKs)" "-l 60 -R"
-run_test "Latence et Jitter (Délai 50ms, Jitter 50ms)" "-d 50 -j 50 -R"
-run_test "Corruption de paquets (10%)" "-e 10 -R"
+run_test "Latence et Jitter (Délai 100ms, Jitter 100ms)" "-d 100 -j 100 -R"
+run_test "Corruption de paquets (50%)" "-e 50 -R"
 run_test "Troncation de paquets (10%)" "-c 10 -R"
 run_test "Tout en même temps" "-l 20 -d 30 -j 20 -e 5 -c 5 -R"
 rm -f $ORIGINAL

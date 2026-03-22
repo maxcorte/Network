@@ -99,9 +99,11 @@ def create_server(server_addr: str, port: int, directory: str):
                         payload = f.read()
                 except FileNotFoundError:
                     print("File not found")
-                    payload = b""
+                    continue
+
             else:
                 print("Request is not in the valid format.")
+                continue
                 
 
             timestamp = int(time.time() * 500) & 0xffffffff  # Masque 32-bit
