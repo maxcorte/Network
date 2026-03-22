@@ -39,8 +39,15 @@ def decode_ack(raw: bytes):
     payload = b""
     #si sack => on extrait le payload
     if ptype == PTYPE_SACK and length > 0:
-        if len(raw) >= 12 + length:
-            payload = raw[12:12+length]
+        expected_total_length = 12 + length + 4
+        if len(raw) < expected_total_length:
+            return None, None, b""
+        payload = raw[12:12+length]        
+        crc2_recv = int.from_bytes(raw[12+length:12+length+4], byteorder='big')
+        crc2_calc = zlib.crc32(payload) & 0xffffffff
+        
+        if crc2_recv != crc2_calc:
+            return None, None, b""
             
     return ptype, seqnum, payload
 
@@ -173,9 +180,6 @@ def create_server(server_addr: str, port: int, directory: str):
             
             sock.settimeout(None) #pour ecouter le prochain client
             print(f"Fichier envoyé pour un total de {len(payload)} bytes")
-
-        else:
-            print("Request is not in the valid format.")
     except socket.error as err:
         print(f'Erreur socket: {err}', file=sys.stderr)
         return -1
