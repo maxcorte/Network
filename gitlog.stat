@@ -1,3 +1,34 @@
+commit 04a62f1cc8158093133cb9f40e25458f0a5f5456
+Author: thibaultvanni <tibo.vanni@gmail.com>
+Date:   Mon Mar 23 19:06:30 2026 +0100
+
+    ajout du rapport au bon format
+
+ rapport.pdf | Bin 0 -> 586693 bytes
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
+commit abc051500d5824ed9a176ac911e2eb3948032353
+Author: thibaultvanni <tibo.vanni@gmail.com>
+Date:   Mon Mar 23 19:01:17 2026 +0100
+
+    Modification de la structure du projet afin qu'elle soit dans le format demandé. Il ne reste plus qu'a ajouté le powerpoint fait sur powerpoint. Modifiction du fichier test_blackbox_performance afin de tester les limites de notre code.
+
+ To_remove/README                           |   3 -
+ To_remove/TODO                             |   0
+ To_remove/llm.model                        |   1 -
+ gitlog.stats                               | 243 +++++++++++++++++++++++++++++
+ recieved_bin                               |   1 -
+ result                                     |  10 --
+ resultats_performances.csv                 |  23 ---
+ "re\303\247u_20k.bin"                      | Bin 20000 -> 0 bytes
+ src/client.py                              |   1 -
+ test_big.bin                               |   1 -
+ test_blackbox.sh => tests/test_blackbox.sh |   0
+ test2.sh => tests/test_performances.sh     |  57 ++++---
+ www/test_20k.bin                           | Bin 20000 -> 0 bytes
+ www/test_big.bin                           |   1 -
+ 14 files changed, 274 insertions(+), 67 deletions(-)
+
 commit c144038e688bf865060034141eb56b546a9729dc
 Author: Thibaut Morsiaux <thibautmorsiaux@gmail.com>
 Date:   Sun Mar 22 22:28:53 2026 +0100
