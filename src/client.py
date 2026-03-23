@@ -188,7 +188,6 @@ if __name__ == "__main__":
         # Envoyer le path au serveur
         request_data = f"GET {path}\r\n".encode('ascii')
         sock.send(request_data)
-        sock.settimeout(2.0)
         recieved = {}
         expected_seqnum = 0
         eof_seqnum = None
