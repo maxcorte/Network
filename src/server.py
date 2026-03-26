@@ -74,6 +74,36 @@ def decode_sack_payload(payload: bytes):
 
     return out_of_order
 
+def try_extract_request(raw_request: bytes):
+    try:
+        if len(raw_request) >= 12:
+            word = int.from_bytes(raw_request[0:4], byteorder='big')
+            ptype = (word >> 30) & 0x3
+            length = (word >> 11) & 0x1fff
+
+            crc1_recv = int.from_bytes(raw_request[8:12], byteorder='big')
+            crc1_calc = zlib.crc32(raw_request[0:8]) & 0xffffffff
+
+            if ptype == PTYPE_DATA and crc1_recv == crc1_calc:
+                if length == 0:
+                    return None
+
+                expected_total = 12 + length + 4
+                if len(raw_request) >= expected_total:
+                    payload = raw_request[12:12+length]
+                    crc2_recv = int.from_bytes(raw_request[12+length:12+length+4], byteorder='big')
+                    crc2_calc = zlib.crc32(payload) & 0xffffffff
+
+                    if crc2_recv == crc2_calc:
+                        return payload.decode('ascii').strip()
+    except Exception:
+        pass
+
+    try:
+        return raw_request.decode('ascii').strip()
+    except UnicodeDecodeError:
+        return None
+
 def create_server(server_addr: str, port: int, directory: str):
     try:
         sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
@@ -82,11 +112,9 @@ def create_server(server_addr: str, port: int, directory: str):
 
         while True:
             raw_request, client_addr = sock.recvfrom(2048)
-            try:
-                request_str = raw_request.decode('ascii').strip()
-            except UnicodeDecodeError:
-                #si corrompu on l'ignore
-                continue   
+            request_str = try_extract_request(raw_request)
+            if request_str is None:
+                continue
 
             # Si c'est le bon format on recoit la requete sous le format: 
             # "GET /llmsmall\r\n" de la part du client.

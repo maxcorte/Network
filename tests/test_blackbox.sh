@@ -23,7 +23,7 @@ run_test() {
     sleep 1 
     
     #client
-    python3 src/client.py "http://localhost:8888/test_blackbox.bin" -s $DOWNLOADED
+    python3 src/client.py "http://localhost:8080/test_blackbox.bin" -s $DOWNLOADED
     
     if cmp -s "$ORIGINAL" "$DOWNLOADED"; then
         echo -e "${GREEN}[SUCCÈS] Le fichier reçu est parfaitement identique !${NC}"
