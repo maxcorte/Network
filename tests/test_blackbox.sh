@@ -3,7 +3,7 @@
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
-ORIGINAL="www/test_blackbox.bin"
+ORIGINAL="./www/test_blackbox.bin"
 DOWNLOADED="reçu_blackbox.bin"
 
 head -c 50000 /dev/urandom > $ORIGINAL
@@ -13,7 +13,7 @@ run_test() {
     SIM_ARGS=$2
     echo -e "========== Test: ${TEST_NAME} =========="
     #serveur
-    python3 src/server.py localhost 8080 --root ./www > /dev/null 2>&1 &
+    python3 src/server.py localhost 8080 --root ./tests/www > /dev/null 2>&1 &
     SERVER_PID=$!
     
     #link simulator

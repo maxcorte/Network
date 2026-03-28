@@ -9,9 +9,9 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Fichiers de test et d'export
-ORIGINAL="www/test_blackbox.bin"
+ORIGINAL="tests/www/test_blackbox.bin"
 DOWNLOADED="reçu_blackbox.bin"
-CSV_FILE="resultats_performances.csv"
+CSV_FILE="tests/resultats_performances.csv"
 
 # Fonction appelée en cas de Ctrl+C (anti-zombies)
 cleanup_on_interrupt() {
@@ -37,7 +37,7 @@ run_test() {
     echo -e "========== Test: ${TEST_NAME} =========="
     
     # Serveur
-    python3 src/server.py localhost 8080 --root ./www > /dev/null 2>&1 &
+    python3 src/server.py localhost 8080 --root ./tests/www > /dev/null 2>&1 &
     SERVER_PID=$!
     
     # Link simulator
